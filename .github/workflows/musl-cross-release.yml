@@ -121,6 +121,8 @@ jobs:
           cat > config.mak <<EOF
           TARGET = ${{ matrix.target.tuple }}
           OUTPUT = $PWD/output
+          GNU_SITE = https://ftp.gnu.org/gnu
+          DL_CMD = wget -c --tries=10 --waitretry=3 --retry-connrefused --retry-on-http-error=429,500,502,503,504 -O
           EOF
 
           if command -v nproc >/dev/null 2>&1; then
@@ -133,7 +135,23 @@ jobs:
             JOBS=$((JOBS - 1))
           fi
 
-          make -j"$JOBS"
+          attempt=1
+          max_attempts=3
+          while true; do
+            if make -j"$JOBS"; then
+              break
+            fi
+
+            if [ "$attempt" -ge "$max_attempts" ]; then
+              echo "Build failed after ${max_attempts} attempts" >&2
+              exit 1
+            fi
+
+            attempt=$((attempt + 1))
+            echo "Retrying build attempt ${attempt}/${max_attempts} after transient failure" >&2
+            sleep 10
+          done
+
           make install
 
       - name: Validate compiler
