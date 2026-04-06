@@ -1,0 +1,236 @@
+name: Build musl-gcc cross toolchains
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Release tag used when manually dispatching (example: v1.0.0)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: "${{ matrix.host.id }} -> ${{ matrix.target.id }}"
+    runs-on: ${{ matrix.host.runner }}
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        host:
+          - id: ubuntu-x86_64
+            runner: ubuntu-24.04
+            host_os: linux
+            host_arch: x86_64
+          - id: ubuntu-aarch64
+            runner: ubuntu-24.04-arm
+            host_os: linux
+            host_arch: aarch64
+          - id: macos-aarch64
+            runner: macos-14
+            host_os: darwin
+            host_arch: aarch64
+        target:
+          - id: x86_64-linux-musl
+            tuple: x86_64-linux-musl
+          - id: aarch64-linux-musl
+            tuple: aarch64-linux-musl
+          - id: riscv64-linux-musl
+            tuple: riscv64-linux-musl
+          - id: loongarch64-linux-musl
+            tuple: loongarch64-linux-musl
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies (Ubuntu)
+        if: runner.os == 'Linux'
+        run: |
+          set -eux
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            ca-certificates \
+            curl \
+            wget \
+            xz-utils \
+            bzip2 \
+            patch \
+            bison \
+            flex \
+            texinfo \
+            gawk \
+            help2man \
+            file \
+            python3 \
+            git \
+            libgmp-dev \
+            libmpfr-dev \
+            libmpc-dev \
+            libisl-dev
+
+      - name: Install dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          set -eux
+          brew update
+          brew install \
+            gnu-sed \
+            gawk \
+            wget \
+            gmp \
+            mpfr \
+            libmpc \
+            isl \
+            texinfo \
+            bison \
+            flex
+          echo "$(brew --prefix gnu-sed)/libexec/gnubin" >> "$GITHUB_PATH"
+          echo "$(brew --prefix bison)/bin" >> "$GITHUB_PATH"
+          echo "$(brew --prefix flex)/bin" >> "$GITHUB_PATH"
+
+      - name: Restore musl-cross-make source cache
+        id: source-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: mcm-sources-cache
+          key: mcm-sources-${{ runner.os }}-${{ runner.arch }}-binutils-2.44-gcc-9.4.0-musl-1.2.5-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            mcm-sources-${{ runner.os }}-${{ runner.arch }}-binutils-2.44-gcc-9.4.0-musl-1.2.5-
+
+      - name: Clone musl-cross-make
+        run: |
+          set -eux
+          git clone --depth 1 https://github.com/richfelker/musl-cross-make.git musl-cross-make
+          mkdir -p musl-cross-make/sources
+          if [ -d mcm-sources-cache ]; then
+            cp -a mcm-sources-cache/. musl-cross-make/sources/ || true
+          fi
+
+      - name: Build toolchain
+        run: |
+          set -eux
+          cd musl-cross-make
+
+          cat > config.mak <<EOF
+          TARGET = ${{ matrix.target.tuple }}
+          OUTPUT = $PWD/output
+          EOF
+
+          if command -v nproc >/dev/null 2>&1; then
+            JOBS=$(nproc)
+          else
+            JOBS=$(sysctl -n hw.logicalcpu)
+          fi
+
+          if [ "$JOBS" -gt 1 ]; then
+            JOBS=$((JOBS - 1))
+          fi
+
+          make -j"$JOBS"
+          make install
+
+      - name: Validate compiler
+        run: |
+          set -eux
+          CC="musl-cross-make/output/bin/${{ matrix.target.tuple }}-gcc"
+          test -x "$CC"
+          "$CC" -dumpmachine
+          "$CC" --version
+
+      - name: Upload build log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log-${{ matrix.target.id }}-host-${{ matrix.host.host_os }}-${{ matrix.host.host_arch }}
+          path: |
+            musl-cross-make/build/**/build.log
+            musl-cross-make/build/**/*.log
+          if-no-files-found: ignore
+
+      - name: Update source cache
+        run: |
+          set -eux
+          rm -rf mcm-sources-cache
+          mkdir -p mcm-sources-cache
+          cp -a musl-cross-make/sources/. mcm-sources-cache/
+
+      - name: Save musl-cross-make source cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: mcm-sources-cache
+          key: ${{ steps.source-cache.outputs.cache-primary-key }}
+
+      - name: Package artifact
+        run: |
+          set -eux
+          mkdir -p dist
+          ASSET="musl-gcc-${{ matrix.target.id }}-host-${{ matrix.host.host_os }}-${{ matrix.host.host_arch }}"
+
+          tar -C musl-cross-make -czf "dist/${ASSET}.tar.gz" output
+
+          if command -v sha256sum >/dev/null 2>&1; then
+            sha256sum "dist/${ASSET}.tar.gz" > "dist/${ASSET}.tar.gz.sha256"
+          else
+            shasum -a 256 "dist/${ASSET}.tar.gz" > "dist/${ASSET}.tar.gz.sha256"
+          fi
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: musl-gcc-${{ matrix.target.id }}-host-${{ matrix.host.host_os }}-${{ matrix.host.host_arch }}
+          path: |
+            dist/*.tar.gz
+            dist/*.sha256
+          if-no-files-found: error
+
+  release:
+    name: Publish release assets
+    needs: build
+    runs-on: ubuntu-24.04
+    if: ${{ needs.build.result == 'success' }}
+
+    steps:
+      - name: Resolve release tag
+        id: resolve_tag
+        run: |
+          set -eux
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          elif [ -n "${{ inputs.release_tag }}" ]; then
+            echo "tag=${{ inputs.release_tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "release_tag is required for workflow_dispatch" >&2
+            exit 1
+          fi
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: musl-gcc-*
+          merge-multiple: true
+          path: release-assets
+
+      - name: Ensure all 12 artifacts exist
+        run: |
+          set -eux
+          count=$(find release-assets -maxdepth 1 -name '*.tar.gz' | wc -l | tr -d ' ')
+          test "$count" -eq 12
+
+      - name: Publish to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.resolve_tag.outputs.tag }}
+          name: ${{ steps.resolve_tag.outputs.tag }}
+          generate_release_notes: true
+          files: |
+            release-assets/*.tar.gz
+            release-assets/*.sha256
+          fail_on_unmatched_files: true
