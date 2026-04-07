@@ -120,29 +120,76 @@ jobs:
 
           LOG_DIR="$PWD/ci-logs"
           mkdir -p "$LOG_DIR"
+          error_pattern='(error:|fatal error:|collect2: error:|undefined reference|ld: cannot find)'
 
           print_error_log() {
-            stderr_log="$1"
-            stdout_log="$2"
-            error_pattern='(^|[^[:alpha:]])(error:|fatal error:|collect2: error:|undefined reference)'
+            log_file="$1"
             matched=0
 
-            if [ -s "$stderr_log" ]; then
-              if grep -E -i "$error_pattern" "$stderr_log"; then
-                matched=1
-              fi
-            fi
-
-            if [ "$matched" -eq 0 ] && [ -s "$stdout_log" ]; then
-              if grep -E -i "$error_pattern" "$stdout_log"; then
+            if [ -s "$log_file" ]; then
+              if grep -E -i "$error_pattern" "$log_file"; then
                 matched=1
               fi
             fi
 
             if [ "$matched" -eq 0 ]; then
-              echo "No explicit error lines matched. Showing stderr tail:" >&2
-              tail -n 120 "$stderr_log" >&2 || true
+              echo "No explicit error lines matched. Showing log tail:" >&2
+              tail -n 120 "$log_file" >&2 || true
             fi
+          }
+
+          print_error_context() {
+            log_file="$1"
+            max_hits=5
+            before_lines=8
+            after_lines=4
+
+            if [ ! -s "$log_file" ]; then
+              echo "No log file available for context: $log_file" >&2
+              return
+            fi
+
+            awk -v pattern="$error_pattern" -v max_hits="$max_hits" -v before="$before_lines" -v after="$after_lines" '
+              BEGIN { IGNORECASE = 1 }
+              {
+                lines[NR] = $0
+              }
+              $0 ~ pattern {
+                hits[++hit_count] = NR
+              }
+              END {
+                if (hit_count == 0) {
+                  start = NR - 120
+                  if (start < 1) start = 1
+                  for (i = start; i <= NR; i++) {
+                    printf "    %6d | %s\\n", i, lines[i]
+                  }
+                  exit
+                }
+
+                shown = hit_count
+                if (shown > max_hits) shown = max_hits
+
+                for (h = 1; h <= shown; h++) {
+                  line = hits[h]
+                  start = line - before
+                  if (start < 1) start = 1
+                  end = line + after
+                  if (end > NR) end = NR
+
+                  printf "---- context around error at line %d ----\\n", line
+                  for (i = start; i <= end; i++) {
+                    prefix = (i == line) ? ">>" : "  "
+                    printf "%s %6d | %s\\n", prefix, i, lines[i]
+                  }
+                  if (h < shown) print ""
+                }
+
+                if (hit_count > max_hits) {
+                  printf "\\nMore than %d error matches found; only first %d shown.\\n", max_hits, max_hits
+                }
+              }
+            ' "$log_file"
           }
 
           cat > config.mak <<EOF
@@ -165,17 +212,19 @@ jobs:
           attempt=1
           max_attempts=3
           while [ "$attempt" -le "$max_attempts" ]; do
-            build_stdout="$LOG_DIR/make-attempt-${attempt}.stdout.log"
-            build_stderr="$LOG_DIR/make-attempt-${attempt}.stderr.log"
+            build_log="$LOG_DIR/make-attempt-${attempt}.log"
 
-            if make -j"$JOBS" >"$build_stdout" 2>"$build_stderr"; then
+            if make -j"$JOBS" V=1 >"$build_log" 2>&1; then
               echo "Build succeeded on attempt ${attempt}/${max_attempts}"
               break
             fi
 
             echo "Build attempt ${attempt}/${max_attempts} failed" >&2
             echo "::group::Build errors (attempt ${attempt})"
-            print_error_log "$build_stderr" "$build_stdout"
+            print_error_log "$build_log"
+            echo "::endgroup::"
+            echo "::group::Build error context (attempt ${attempt})"
+            print_error_context "$build_log"
             echo "::endgroup::"
 
             if [ "$attempt" -ge "$max_attempts" ]; then
@@ -188,12 +237,14 @@ jobs:
             sleep 10
           done
 
-          install_stdout="$LOG_DIR/make-install.stdout.log"
-          install_stderr="$LOG_DIR/make-install.stderr.log"
-          if ! make install >"$install_stdout" 2>"$install_stderr"; then
+          install_log="$LOG_DIR/make-install.log"
+          if ! make V=1 install >"$install_log" 2>&1; then
             echo "make install failed" >&2
             echo "::group::Install errors"
-            print_error_log "$install_stderr" "$install_stdout"
+            print_error_log "$install_log"
+            echo "::endgroup::"
+            echo "::group::Install error context"
+            print_error_context "$install_log"
             echo "::endgroup::"
             exit 1
           fi
