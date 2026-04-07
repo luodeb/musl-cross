@@ -115,8 +115,35 @@ jobs:
 
       - name: Build toolchain
         run: |
-          set -eux
+          set -eu
           cd musl-cross-make
+
+          LOG_DIR="$PWD/ci-logs"
+          mkdir -p "$LOG_DIR"
+
+          print_error_log() {
+            stderr_log="$1"
+            stdout_log="$2"
+            error_pattern='(^|[^[:alpha:]])(error:|fatal error:|collect2: error:|undefined reference)'
+            matched=0
+
+            if [ -s "$stderr_log" ]; then
+              if grep -E -i "$error_pattern" "$stderr_log"; then
+                matched=1
+              fi
+            fi
+
+            if [ "$matched" -eq 0 ] && [ -s "$stdout_log" ]; then
+              if grep -E -i "$error_pattern" "$stdout_log"; then
+                matched=1
+              fi
+            fi
+
+            if [ "$matched" -eq 0 ]; then
+              echo "No explicit error lines matched. Showing stderr tail:" >&2
+              tail -n 120 "$stderr_log" >&2 || true
+            fi
+          }
 
           cat > config.mak <<EOF
           TARGET = ${{ matrix.target.tuple }}
@@ -137,10 +164,19 @@ jobs:
 
           attempt=1
           max_attempts=3
-          while true; do
-            if make -j"$JOBS"; then
+          while [ "$attempt" -le "$max_attempts" ]; do
+            build_stdout="$LOG_DIR/make-attempt-${attempt}.stdout.log"
+            build_stderr="$LOG_DIR/make-attempt-${attempt}.stderr.log"
+
+            if make -j"$JOBS" >"$build_stdout" 2>"$build_stderr"; then
+              echo "Build succeeded on attempt ${attempt}/${max_attempts}"
               break
             fi
+
+            echo "Build attempt ${attempt}/${max_attempts} failed" >&2
+            echo "::group::Build errors (attempt ${attempt})"
+            print_error_log "$build_stderr" "$build_stdout"
+            echo "::endgroup::"
 
             if [ "$attempt" -ge "$max_attempts" ]; then
               echo "Build failed after ${max_attempts} attempts" >&2
@@ -152,7 +188,15 @@ jobs:
             sleep 10
           done
 
-          make install
+          install_stdout="$LOG_DIR/make-install.stdout.log"
+          install_stderr="$LOG_DIR/make-install.stderr.log"
+          if ! make install >"$install_stdout" 2>"$install_stderr"; then
+            echo "make install failed" >&2
+            echo "::group::Install errors"
+            print_error_log "$install_stderr" "$install_stdout"
+            echo "::endgroup::"
+            exit 1
+          fi
 
       - name: Validate compiler
         run: |
@@ -170,6 +214,7 @@ jobs:
           path: |
             musl-cross-make/build/**/build.log
             musl-cross-make/build/**/*.log
+            musl-cross-make/ci-logs/*.log
           if-no-files-found: ignore
 
       - name: Update source cache
