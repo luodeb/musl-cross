@@ -211,8 +211,17 @@ jobs:
           OUTPUT = $PWD/output
           GNU_SITE = https://ftp.gnu.org/gnu
           DL_CMD = wget -c --tries=10 --waitretry=3 --retry-connrefused --retry-on-http-error=429,500,502,503,504 -O
-          GCC_CONFIG += --disable-fixincludes
           EOF
+
+          SYSROOT_INCLUDE="$PWD/output/${{ matrix.target.tuple }}/include"
+          mkdir -p "$SYSROOT_INCLUDE"
+          if [ ! -f "$SYSROOT_INCLUDE/stdc-predef.h" ]; then
+            if [ -f /usr/include/stdc-predef.h ]; then
+              cp /usr/include/stdc-predef.h "$SYSROOT_INCLUDE/stdc-predef.h"
+            else
+              : > "$SYSROOT_INCLUDE/stdc-predef.h"
+            fi
+          fi
 
           if command -v nproc >/dev/null 2>&1; then
             JOBS=$(nproc)
