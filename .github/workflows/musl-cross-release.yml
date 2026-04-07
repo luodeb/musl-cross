@@ -339,7 +339,7 @@ jobs:
           TARGET_ARCH=$(echo "${{ matrix.target.tuple }}" | cut -d- -f1)
           ASSET="${{ matrix.host.host_os }}-${{ matrix.host.host_arch }}-host-${TARGET_ARCH}-linux-musl-gcc"
 
-          tar -C musl-cross-make -czf "dist/${ASSET}.tar.gz" output
+          tar -C musl-cross-make/output -czf "dist/${ASSET}.tar.gz" .
 
           if command -v sha256sum >/dev/null 2>&1; then
             sha256sum "dist/${ASSET}.tar.gz" > "dist/${ASSET}.tar.gz.sha256"

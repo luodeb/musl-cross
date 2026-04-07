@@ -28,19 +28,20 @@ Prebuilt musl-based cross-compilation toolchains for Linux targets, powered by [
 ## Quick Install
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/luodeb/musl-cross/main/install.sh)
+curl -fsSL https://raw.githubusercontent.com/luodeb/musl-cross/main/install.sh | bash
 ```
 
 The installer runs in interactive mode and will guide you through:
 
-1. **Release selection** — pick a release version
-2. **Target selection** — choose the target architecture (x86_64, aarch64, riscv64, loongarch64)
-3. **Install location** — defaults to `~/.musl-cross`, customizable
+1. **Target selection** — choose the target architecture (x86_64, aarch64, riscv64, loongarch64)
+2. **Install location** — defaults to `~/.musl-cross`, customizable
+
+It automatically fetches the latest release from GitHub.
 
 After installation, add the toolchain to your `PATH`:
 
 ```bash
-export PATH="$HOME/.musl-cross/output/bin:$PATH"
+export PATH="$HOME/.musl-cross/bin:$PATH"
 ```
 
 ### Non-interactive Install
@@ -50,7 +51,7 @@ You can also set environment variables for automated installation:
 ```bash
 export MUSL_CROSS_TARGET=aarch64       # Target architecture
 export MUSL_CROSS_DIR="$HOME/.musl-cross"  # Install directory
-export MUSL_CROSS_TAG="latest"         # Release tag
+export MUSL_CROSS_TAG="v1.0.2"        # Release tag, or "latest"
 bash install.sh
 ```
 
@@ -71,7 +72,7 @@ curl -fSL -o musl-cross.tar.gz \
   https://github.com/luodeb/musl-cross/releases/latest/download/darwin-aarch64-host-aarch64-linux-musl-gcc.tar.gz
 mkdir -p ~/.musl-cross
 tar -xzf musl-cross.tar.gz -C ~/.musl-cross
-export PATH="$HOME/.musl-cross/output/bin:$PATH"
+export PATH="$HOME/.musl-cross/bin:$PATH"
 ```
 
 ## Usage
@@ -91,7 +92,7 @@ aarch64-linux-musl-gcc -static -o hello hello.c
 ### Using sysroot explicitly
 
 ```bash
-aarch64-linux-musl-gcc --sysroot=$HOME/.musl-cross/output/aarch64-linux-musl/sysroot -o hello hello.c
+aarch64-linux-musl-gcc --sysroot=$HOME/.musl-cross/aarch64-linux-musl/sysroot -o hello hello.c
 ```
 
 ### Available compilers per target
