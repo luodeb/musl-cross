@@ -216,6 +216,7 @@ jobs:
 
           cat > config.mak <<EOF
           TARGET = ${{ matrix.target.tuple }}
+          GCC_VER = 15.2.0
           OUTPUT = $PWD/output
           GNU_SITE = https://ftp.gnu.org/gnu
           DL_CMD = wget -c --tries=10 --waitretry=3 --retry-connrefused --retry-on-http-error=429,500,502,503,504 -O
