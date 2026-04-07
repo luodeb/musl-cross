@@ -122,6 +122,20 @@ jobs:
           mkdir -p "$LOG_DIR"
           error_pattern='(error:|fatal error:|collect2: error:|undefined reference|ld: cannot find)'
 
+          if ! command -v sha1sum >/dev/null 2>&1; then
+            if command -v shasum >/dev/null 2>&1; then
+              CI_BIN="$PWD/ci-bin"
+              mkdir -p "$CI_BIN"
+              printf '%s\n' '#!/bin/sh' 'exec shasum -a 1 "$@"' > "$CI_BIN/sha1sum"
+              chmod +x "$CI_BIN/sha1sum"
+              export PATH="$CI_BIN:$PATH"
+              echo "sha1sum not found; using shasum compatibility wrapper"
+            else
+              echo "Neither sha1sum nor shasum is available on this runner" >&2
+              exit 1
+            fi
+          fi
+
           print_error_log() {
             log_file="$1"
             matched=0
@@ -197,6 +211,7 @@ jobs:
           OUTPUT = $PWD/output
           GNU_SITE = https://ftp.gnu.org/gnu
           DL_CMD = wget -c --tries=10 --waitretry=3 --retry-connrefused --retry-on-http-error=429,500,502,503,504 -O
+          GCC_CONFIG += --disable-fixincludes
           EOF
 
           if command -v nproc >/dev/null 2>&1; then
