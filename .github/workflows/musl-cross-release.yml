@@ -14,6 +14,10 @@ on:
 permissions:
   contents: write
 
+env:
+  MCM_REPO: https://github.com/richfelker/musl-cross-make.git
+  MCM_REF: e5147dde912478dd32ad42a25003e82d4f5733aa
+
 jobs:
   build:
     name: "${{ matrix.host.id }} -> ${{ matrix.target.id }}"
@@ -107,8 +111,13 @@ jobs:
       - name: Clone musl-cross-make
         run: |
           set -eux
-          git clone --depth 1 https://github.com/richfelker/musl-cross-make.git musl-cross-make
+          git init musl-cross-make
+          git -C musl-cross-make remote add origin "$MCM_REPO"
+          git -C musl-cross-make fetch --depth 1 origin "$MCM_REF"
+          git -C musl-cross-make checkout --detach FETCH_HEAD
           mkdir -p musl-cross-make/sources
+          mkdir -p musl-cross-make/hashes
+          cp hashes/gcc-15.2.0.tar.xz.sha1 musl-cross-make/hashes/
           if [ -d mcm-sources-cache ]; then
             cp -a mcm-sources-cache/. musl-cross-make/sources/ || true
           fi
