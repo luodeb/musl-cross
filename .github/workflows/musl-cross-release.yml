@@ -23,8 +23,8 @@ jobs:
     name: "${{ matrix.host.id }} -> ${{ matrix.target.id }}"
     runs-on: ${{ matrix.host.runner }}
     strategy:
-      fail-fast: false
-      max-parallel: 3
+      fail-fast: true
+      max-parallel: 12
       matrix:
         host:
           - id: ubuntu-x86_64
@@ -336,7 +336,8 @@ jobs:
         run: |
           set -eux
           mkdir -p dist
-          ASSET="musl-gcc-${{ matrix.target.id }}-host-${{ matrix.host.host_os }}-${{ matrix.host.host_arch }}"
+          TARGET_ARCH=$(echo "${{ matrix.target.tuple }}" | cut -d- -f1)
+          ASSET="${{ matrix.host.host_os }}-${{ matrix.host.host_arch }}-host-${TARGET_ARCH}-linux-musl-gcc"
 
           tar -C musl-cross-make -czf "dist/${ASSET}.tar.gz" output
 
