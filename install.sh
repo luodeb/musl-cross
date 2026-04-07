@@ -18,6 +18,9 @@ ok()    { printf "${GREEN}[OK]${RESET}    %s\n" "$*"; }
 warn()  { printf "${YELLOW}[WARN]${RESET}  %s\n" "$*"; }
 err()   { printf "${RED}[ERROR]${RESET} %s\n" "$*" >&2; }
 
+# Read from terminal even when piped (curl ... | bash)
+prompt() { read -r "$@" < /dev/tty; }
+
 # ── Detect host platform ────────────────────────────────────────────────
 detect_host() {
     local os arch
@@ -100,7 +103,7 @@ select_target() {
 
     default_target=1
     printf "Select target [1-4] (default: ${default_target}): "
-    read -r choice
+    prompt choice
     choice="${choice:-$default_target}"
 
     case "$choice" in
@@ -120,7 +123,7 @@ select_install_dir() {
 
     echo ""
     printf "Install directory (default: ${default_dir}): "
-    read -r user_dir
+    prompt user_dir
     install_dir="${user_dir:-$default_dir}"
 
     # Expand ~
@@ -249,7 +252,7 @@ main() {
         if ! get_latest_tag; then
             echo ""
             printf "Enter release tag manually (e.g. v1.0.0): "
-            read -r latest_tag
+            prompt latest_tag
             if [ -z "$latest_tag" ]; then
                 err "No tag provided."
                 exit 1
