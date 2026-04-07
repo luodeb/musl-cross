@@ -2,8 +2,8 @@
 set -euo pipefail
 
 REPO="luodeb/musl-cross"
-API_BASE="https://api.github.com/repos/${REPO}"
 CURL_OPTS=(--connect-timeout 10 --max-time 30 -fsSL)
+DEFAULT_TAG="linux-musl"
 
 # ── Colors ──────────────────────────────────────────────────────────────
 RED='\033[0;31m'
@@ -42,21 +42,6 @@ detect_host() {
     host_id="${host_os}-${host_arch}"
 }
 
-# ── Get latest release tag ──────────────────────────────────────────────
-get_latest_tag() {
-    info "Fetching latest release information..." >&2
-    latest_tag=$(curl "${CURL_OPTS[@]}" "${API_BASE}/releases/latest" 2>/dev/null \
-        | grep '"tag_name"' \
-        | head -1 \
-        | sed -E 's/.*"tag_name"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/')
-
-    if [ -z "$latest_tag" ]; then
-        warn "Failed to fetch latest release tag (API may be rate-limited)."
-        return 1
-    fi
-    ok "Latest release: ${latest_tag}"
-}
-
 # ── Non-interactive mode ─────────────────────────────────────────────────
 non_interactive=false
 
@@ -82,12 +67,8 @@ check_non_interactive() {
 
     if [ -n "${MUSL_CROSS_TAG:-}" ]; then
         non_interactive=true
-        if [ "$MUSL_CROSS_TAG" = "latest" ]; then
-            get_latest_tag || true
-        else
-            latest_tag="$MUSL_CROSS_TAG"
-            ok "Release (env): ${latest_tag}"
-        fi
+        latest_tag="$MUSL_CROSS_TAG"
+        ok "Release (env): ${latest_tag}"
     fi
 }
 
@@ -249,16 +230,8 @@ main() {
     # 2. Resolve release tag
     check_non_interactive
     if [ -z "${latest_tag:-}" ]; then
-        if ! get_latest_tag; then
-            echo ""
-            printf "Enter release tag manually (e.g. v1.0.0): "
-            prompt latest_tag
-            if [ -z "$latest_tag" ]; then
-                err "No tag provided."
-                exit 1
-            fi
-            ok "Using tag: ${latest_tag}"
-        fi
+        latest_tag="$DEFAULT_TAG"
+        ok "Release: ${latest_tag}"
     fi
 
     # 3. Select target
