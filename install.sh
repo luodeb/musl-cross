@@ -116,7 +116,7 @@ select_target() {
 # ── Interactive install path ────────────────────────────────────────────
 select_install_dir() {
     local default_dir
-    default_dir="$HOME/.musl-cross"
+    default_dir="$HOME/.musl-cross/${target_arch}-linux-musl"
 
     echo ""
     printf "Install directory (default: ${default_dir}): "
