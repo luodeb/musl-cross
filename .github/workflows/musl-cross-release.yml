@@ -223,21 +223,7 @@ jobs:
           EOF
 
           BUILD_SYSROOT="$PWD/build/local/${{ matrix.target.tuple }}/obj_sysroot"
-          TARGET_SYSROOT="/${{ matrix.target.tuple }}"
           mkdir -p "$BUILD_SYSROOT/include" "$BUILD_SYSROOT/sys-include"
-
-          if [ ! -e "$TARGET_SYSROOT" ]; then
-            if command -v sudo >/dev/null 2>&1; then
-              sudo ln -s "$BUILD_SYSROOT" "$TARGET_SYSROOT"
-            else
-              ln -s "$BUILD_SYSROOT" "$TARGET_SYSROOT"
-            fi
-          fi
-
-          if [ ! -e "$TARGET_SYSROOT" ]; then
-            echo "Failed to prepare target sysroot path: $TARGET_SYSROOT" >&2
-            exit 1
-          fi
 
           for predef_path in "$BUILD_SYSROOT/include/stdc-predef.h" "$BUILD_SYSROOT/sys-include/stdc-predef.h"; do
             if [ ! -f "$predef_path" ]; then
@@ -269,7 +255,7 @@ jobs:
           while [ "$attempt" -le "$max_attempts" ]; do
             build_log="$LOG_DIR/make-attempt-${attempt}.log"
 
-            if make -j"$JOBS" V=1 ${MAKE_EXTRA_ARGS} >"$build_log" 2>&1; then
+            if make -j"$JOBS" V=1 SYSROOT="$BUILD_SYSROOT" ${MAKE_EXTRA_ARGS} >"$build_log" 2>&1; then
               echo "Build succeeded on attempt ${attempt}/${max_attempts}"
               break
             fi
@@ -293,7 +279,7 @@ jobs:
           done
 
           install_log="$LOG_DIR/make-install.log"
-          if ! make V=1 ${MAKE_EXTRA_ARGS} install >"$install_log" 2>&1; then
+          if ! make V=1 SYSROOT="$BUILD_SYSROOT" ${MAKE_EXTRA_ARGS} install >"$install_log" 2>&1; then
             echo "make install failed" >&2
             echo "::group::Install errors"
             print_error_log "$install_log"
