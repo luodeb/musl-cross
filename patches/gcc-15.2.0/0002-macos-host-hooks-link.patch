@@ -1,0 +1,12 @@
+diff --git a/gcc/config.host b/gcc/config.host
+--- a/gcc/config.host
++++ b/gcc/config.host
+@@ -93,7 +93,7 @@ case ${host} in
+ case ${host} in
+   *-darwin*)
+     # Generic darwin host support.
+-    out_host_hook_obj=host-darwin.o
++    out_host_hook_obj="host-default.o host-darwin.o"
+     host_xmake_file="${host_xmake_file} x-darwin"
+     ;;
+ esac

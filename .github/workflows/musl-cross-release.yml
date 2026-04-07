@@ -100,9 +100,9 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: mcm-sources-cache
-          key: mcm-sources-${{ runner.os }}-${{ runner.arch }}-binutils-2.44-gcc-9.4.0-musl-1.2.5-${{ github.run_id }}-${{ github.run_attempt }}
+          key: mcm-sources-${{ runner.os }}-${{ runner.arch }}-binutils-2.44-gcc-15.2.0-musl-1.2.5-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
-            mcm-sources-${{ runner.os }}-${{ runner.arch }}-binutils-2.44-gcc-9.4.0-musl-1.2.5-
+            mcm-sources-${{ runner.os }}-${{ runner.arch }}-binutils-2.44-gcc-15.2.0-musl-1.2.5-
 
       - name: Clone musl-cross-make
         run: |
@@ -134,6 +134,14 @@ jobs:
               echo "Neither sha1sum nor shasum is available on this runner" >&2
               exit 1
             fi
+          fi
+
+          if [ "${{ runner.os }}" = "macOS" ]; then
+            mkdir -p patches/gcc-15.2.0 patches/binutils-2.44
+
+            cp ../patches/gcc-15.2.0/0001-macos-clang17-compat.patch patches/gcc-15.2.0/
+            cp ../patches/gcc-15.2.0/0002-macos-host-hooks-link.patch patches/gcc-15.2.0/
+            cp ../patches/binutils-2.44/0001-macos-clang17-zutil.patch patches/binutils-2.44/
           fi
 
           print_error_log() {
@@ -213,14 +221,36 @@ jobs:
           DL_CMD = wget -c --tries=10 --waitretry=3 --retry-connrefused --retry-on-http-error=429,500,502,503,504 -O
           EOF
 
-          SYSROOT_INCLUDE="$PWD/output/${{ matrix.target.tuple }}/include"
-          mkdir -p "$SYSROOT_INCLUDE"
-          if [ ! -f "$SYSROOT_INCLUDE/stdc-predef.h" ]; then
-            if [ -f /usr/include/stdc-predef.h ]; then
-              cp /usr/include/stdc-predef.h "$SYSROOT_INCLUDE/stdc-predef.h"
+          BUILD_SYSROOT="$PWD/build/local/${{ matrix.target.tuple }}/obj_sysroot"
+          TARGET_SYSROOT="/${{ matrix.target.tuple }}"
+          mkdir -p "$BUILD_SYSROOT/include" "$BUILD_SYSROOT/sys-include"
+
+          if [ ! -e "$TARGET_SYSROOT" ]; then
+            if command -v sudo >/dev/null 2>&1; then
+              sudo ln -s "$BUILD_SYSROOT" "$TARGET_SYSROOT"
             else
-              : > "$SYSROOT_INCLUDE/stdc-predef.h"
+              ln -s "$BUILD_SYSROOT" "$TARGET_SYSROOT"
             fi
+          fi
+
+          if [ ! -e "$TARGET_SYSROOT" ]; then
+            echo "Failed to prepare target sysroot path: $TARGET_SYSROOT" >&2
+            exit 1
+          fi
+
+          for predef_path in "$BUILD_SYSROOT/include/stdc-predef.h" "$BUILD_SYSROOT/sys-include/stdc-predef.h"; do
+            if [ ! -f "$predef_path" ]; then
+              if [ -f /usr/include/stdc-predef.h ]; then
+                cp /usr/include/stdc-predef.h "$predef_path"
+              else
+                : > "$predef_path"
+              fi
+            fi
+          done
+
+          MAKE_EXTRA_ARGS=""
+          if [ "${{ matrix.target.tuple }}" = "riscv64-linux-musl" ]; then
+            MAKE_EXTRA_ARGS="enable_shared=no"
           fi
 
           if command -v nproc >/dev/null 2>&1; then
@@ -238,7 +268,7 @@ jobs:
           while [ "$attempt" -le "$max_attempts" ]; do
             build_log="$LOG_DIR/make-attempt-${attempt}.log"
 
-            if make -j"$JOBS" V=1 >"$build_log" 2>&1; then
+            if make -j"$JOBS" V=1 ${MAKE_EXTRA_ARGS} >"$build_log" 2>&1; then
               echo "Build succeeded on attempt ${attempt}/${max_attempts}"
               break
             fi
@@ -262,7 +292,7 @@ jobs:
           done
 
           install_log="$LOG_DIR/make-install.log"
-          if ! make V=1 install >"$install_log" 2>&1; then
+          if ! make V=1 ${MAKE_EXTRA_ARGS} install >"$install_log" 2>&1; then
             echo "make install failed" >&2
             echo "::group::Install errors"
             print_error_log "$install_log"
