@@ -28,11 +28,11 @@ jobs:
       matrix:
         host:
           - id: ubuntu-x86_64
-            runner: ubuntu-24.04
+            runner: ubuntu-20.04
             host_os: linux
             host_arch: x86_64
           - id: ubuntu-aarch64
-            runner: ubuntu-24.04-arm
+            runner: ubuntu-20.04-arm
             host_os: linux
             host_arch: aarch64
           - id: macos-aarch64
